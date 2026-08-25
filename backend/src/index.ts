@@ -3,12 +3,15 @@ import express from "express";
 import { join } from "node:path";
 import type { ResultStore } from "@pinpin/shared";
 import { routes } from "./api/routes.js";
+import { openDb } from "./storage/db.js";
+import { WarehouseStore } from "./storage/warehouse-store.js";
 
-export function createApp(store: ResultStore) {
+export function createApp(store: ResultStore, warehouse?: WarehouseStore) {
+  const wh = warehouse ?? new WarehouseStore(openDb(":memory:"));
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: "10mb" }));
-  app.use("/api", routes(store));
+  app.use("/api", routes(store, wh));
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(500).json({ error: err.message });
   });
@@ -17,7 +20,8 @@ export function createApp(store: ResultStore) {
 
 if (process.argv[1]?.endsWith("index.js") || process.argv[1]?.endsWith("index.ts")) {
   const { JsonResultStore } = await import("./storage/json-store.js");
-  const app = createApp(new JsonResultStore(join(process.cwd(), "data")));
+  const warehouse = new WarehouseStore(openDb(join(process.cwd(), "data", "warehouse.sqlite")));
+  const app = createApp(new JsonResultStore(join(process.cwd(), "data")), warehouse);
   const port = Number(process.env.PORT) || 3001;
   app.listen(port, () => console.log(`backend listening on ${port}`));
 }
