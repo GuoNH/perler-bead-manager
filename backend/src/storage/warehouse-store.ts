@@ -47,13 +47,13 @@ export class WarehouseStore {
              updated_at = ?
          WHERE id = ?`,
       ).run(
-        input.color,
+        input.color ?? null,
         input.currentStock,
         input.minStock,
-        input.unit,
-        input.note,
-        input.location,
-        input.supplier,
+        input.unit ?? null,
+        input.note ?? null,
+        input.location ?? null,
+        input.supplier ?? null,
         now,
         id,
       );
@@ -158,7 +158,7 @@ export class WarehouseStore {
       revertedAt: (s.reverted_at as string | null) ?? null,
       lines: (this.db.prepare(
         "SELECT bead_id, count FROM consumption_lines WHERE submission_id = ?",
-      ).all(s.id) as Array<{ bead_id: string; count: number }>).map((l) => ({
+      ).all(s.id as string) as Array<{ bead_id: string; count: number }>).map((l) => ({
         beadId: l.bead_id,
         count: l.count,
       })),
