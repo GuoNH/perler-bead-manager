@@ -22,5 +22,7 @@ describe("recognize", () => {
     const result = await recognize("test.png", png);
     expect(result.legend.length).toBeGreaterThanOrEqual(2);
     expect(result.legend[0].id).toBe("A10");
+    expect(result.legend[0].count).toBe(202);
+    expect(result.legend[0].rgb).toEqual({ r: 255, g: 0, b: 0 });
   });
 });

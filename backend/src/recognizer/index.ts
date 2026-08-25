@@ -36,12 +36,11 @@ export async function recognize(
     const width = s.x0 - left;
     if (width <= 0) continue;
     const midY = Math.round((s.y0 + s.y1) / 2);
-    const textBox = { x0: left, y0: s.y0, x1: s.x0, y1: s.y1 };
     const idBox = { x0: left, y0: s.y0, x1: s.x0, y1: midY };
     const countBox = { x0: left, y0: midY, x1: s.x0, y1: s.y1 };
     const id = await ocrCrop(img, idBox, { whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", psm: 7 });
     const countText = await ocrCrop(img, countBox, { whitelist: "0123456789", psm: 7 });
-    const count = Number(countText);
+    const count = countText.trim() === "" ? NaN : Number(countText);
     if (!id) {
       warnings.push({ level: "error", message: `条目 ${i + 1} 未识别到编号` });
       continue;
