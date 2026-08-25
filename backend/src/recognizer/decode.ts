@@ -9,6 +9,7 @@ export interface DecodedImage {
 export async function decodeRgb(input: Buffer): Promise<DecodedImage> {
   const { data, info } = await sharp(input)
     .rotate()
+    .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
   return {

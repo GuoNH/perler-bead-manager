@@ -6,12 +6,17 @@ export interface Swatch extends Box {
 }
 
 interface Component {
-  id: number;
   minX: number;
   minY: number;
   maxX: number;
   maxY: number;
   area: number;
+  minR: number;
+  maxR: number;
+  minG: number;
+  maxG: number;
+  minB: number;
+  maxB: number;
 }
 
 export function detectSwatches(img: DecodedImage): Swatch[] {
@@ -19,6 +24,9 @@ export function detectSwatches(img: DecodedImage): Swatch[] {
   const mw = Math.ceil(img.width / stride);
   const mh = Math.ceil(img.height / stride);
   const mask = new Uint8Array(mw * mh);
+  const dr = new Uint8Array(mw * mh);
+  const dg = new Uint8Array(mw * mh);
+  const db = new Uint8Array(mw * mh);
 
   for (let my = 0; my < mh; my++) {
     for (let mx = 0; mx < mw; mx++) {
@@ -33,16 +41,20 @@ export function detectSwatches(img: DecodedImage): Swatch[] {
       const sat = mxv === 0 ? 0 : (mxv - mnv) / mxv;
       const bright = mxv >= 70;
       mask[my * mw + mx] = sat > 0.45 && bright ? 1 : 0;
+      dr[my * mw + mx] = r;
+      dg[my * mw + mx] = g;
+      db[my * mw + mx] = b;
     }
   }
 
-  const components = findComponents(mask, mw, mh);
+  const components = findComponents(mask, dr, dg, db, mw, mh);
   const candidates = components
     .map((c) => ({
       ...c,
       w: c.maxX - c.minX + 1,
       h: c.maxY - c.minY + 1,
       ratio: (c.maxX - c.minX + 1) / (c.maxY - c.minY + 1),
+      spread: Math.max(c.maxR - c.minR, c.maxG - c.minG, c.maxB - c.minB),
     }))
     .filter(
       (c) =>
@@ -50,7 +62,8 @@ export function detectSwatches(img: DecodedImage): Swatch[] {
         c.w >= 8 &&
         c.h >= 8 &&
         c.ratio >= 0.7 &&
-        c.ratio <= 1.6,
+        c.ratio <= 1.6 &&
+        c.spread <= 60,
     );
 
   const sorted = [...candidates].sort((a, b) => a.minY - b.minY || a.minX - b.minX);
@@ -77,7 +90,14 @@ export function detectSwatches(img: DecodedImage): Swatch[] {
   );
 }
 
-function findComponents(mask: Uint8Array, w: number, h: number): Component[] {
+function findComponents(
+  mask: Uint8Array,
+  dr: Uint8Array,
+  dg: Uint8Array,
+  db: Uint8Array,
+  w: number,
+  h: number,
+): Component[] {
   const label = new Int32Array(w * h).fill(0);
   const components: Component[] = [];
   let next = 1;
@@ -87,12 +107,17 @@ function findComponents(mask: Uint8Array, w: number, h: number): Component[] {
     if (mask[start] === 0 || label[start] !== 0) continue;
     const id = next++;
     const comp: Component = {
-      id,
       minX: w,
       minY: h,
       maxX: 0,
       maxY: 0,
       area: 0,
+      minR: 255,
+      maxR: 0,
+      minG: 255,
+      maxG: 0,
+      minB: 255,
+      maxB: 0,
     };
     label[start] = id;
     stack.push(start);
@@ -105,6 +130,12 @@ function findComponents(mask: Uint8Array, w: number, h: number): Component[] {
       comp.maxX = Math.max(comp.maxX, x);
       comp.maxY = Math.max(comp.maxY, y);
       comp.area++;
+      comp.minR = Math.min(comp.minR, dr[p]);
+      comp.maxR = Math.max(comp.maxR, dr[p]);
+      comp.minG = Math.min(comp.minG, dg[p]);
+      comp.maxG = Math.max(comp.maxG, dg[p]);
+      comp.minB = Math.min(comp.minB, db[p]);
+      comp.maxB = Math.max(comp.maxB, db[p]);
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
         const nx = x + dx;
         const ny = y + dy;
