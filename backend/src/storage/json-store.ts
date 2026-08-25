@@ -34,7 +34,7 @@ export class JsonResultStore implements ResultStore {
     const csvPath = join(this.dir, `${id}.csv`);
     await writeFile(jsonPath, JSON.stringify(full, null, 2), "utf8");
     await writeFile(csvPath, this.toCsv(full), "utf8");
-    const index = await this.list().catch(() => []);
+    const index = await this.list().catch((): RecognitionSummary[] => []);
     index.push({
       id,
       imageName: full.image.name,

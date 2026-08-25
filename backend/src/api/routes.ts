@@ -31,7 +31,7 @@ export function routes(store: ResultStore): Router {
         createdAt: new Date().toISOString(),
       });
       const total = payload.legend.reduce((sum, item) => sum + item.count, 0);
-      res.json({ id, total, ...saved });
+      res.json({ ...saved, total });
     } catch (err) {
       next(err);
     }
