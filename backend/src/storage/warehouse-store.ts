@@ -67,7 +67,9 @@ export class WarehouseStore {
               MAX(0, i.min_stock - i.current_stock) AS deficit,
               COALESCE(SUM(l.count), 0) AS cumulative_consumed
        FROM inventory_items i
-       LEFT JOIN consumption_lines l ON l.bead_id = i.id
+       LEFT JOIN consumption_lines l
+         ON l.bead_id = i.id
+        AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.id = l.submission_id AND s.reverted_at IS NOT NULL)
        WHERE i.id LIKE ?
        GROUP BY i.id
        ORDER BY i.id`,

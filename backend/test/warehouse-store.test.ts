@@ -1,5 +1,3 @@
-import { rmSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WarehouseStore, openDb } from "../src/storage/warehouse-store.js";
 
@@ -16,8 +14,10 @@ describe("WarehouseStore", () => {
     store.upsertItem("A10", { currentStock: 100, minStock: 50 });
     store.consumeSubmission("s1", "t.png", [{ beadId: "A10", count: 30 }]);
     expect(store.listInventory()[0].currentStock).toBe(70);
+    expect(store.listInventory()[0].cumulativeConsumed).toBe(30);
     store.revertSubmission("s1");
     expect(store.listInventory()[0].currentStock).toBe(100);
+    expect(store.listInventory()[0].cumulativeConsumed).toBe(0);
   });
 
   it("rejects double revert", () => {
