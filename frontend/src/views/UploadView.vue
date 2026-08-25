@@ -14,11 +14,15 @@ function onFile(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0];
   if (file) void store.recognize(file);
 }
+function onDrop(ev: DragEvent) {
+  const file = ev.dataTransfer?.files?.[0];
+  if (file) void store.recognize(file);
+}
 </script>
 
 <template>
   <main class="upload">
-    <section class="drop" @click="input?.click()" @dragover.prevent @drop.prevent="onFile">
+    <section class="drop" @click="input?.click()" @dragover.prevent @drop.prevent="onDrop">
       <input ref="input" type="file" accept="image/*" hidden @change="onFile" />
       <img v-if="store.previewUrl" :src="store.previewUrl" alt="图纸预览" />
       <p v-else>点击或拖拽上传拼豆图纸</p>
