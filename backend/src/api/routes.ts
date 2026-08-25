@@ -47,7 +47,12 @@ export function routes(store: ResultStore): Router {
 
   r.get("/results/:id", async (req, res, next) => {
     try {
-      res.json(await store.get(req.params.id));
+      const id = req.params.id;
+      if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+        res.status(400).json({ error: "非法编号" });
+        return;
+      }
+      res.json(await store.get(id));
     } catch (err) {
       next(err);
     }
