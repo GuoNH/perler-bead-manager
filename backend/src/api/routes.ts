@@ -1,5 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ResultStore, SubmitPayload } from "@pinpin/shared";
 import { recognize } from "../recognizer/index.js";
 import type { WarehouseStore } from "../storage/warehouse-store.js";
@@ -25,15 +27,26 @@ export function routes(store: ResultStore, warehouse: WarehouseStore): Router {
     try {
       const payload = req.body as SubmitPayload;
       const id = `${new Date().getTime()}`;
+      const indexPath = join((store as unknown as { dir: string }).dir, "index.json");
+      const priorIndex = await readFile(indexPath, "utf8").catch(() => "[]");
       const saved = await store.save({
         ...payload,
         id,
         createdAt: new Date().toISOString(),
       });
-      warehouse.consumeSubmission(id, payload.image.name, payload.legend.map((item) => ({
-        beadId: item.id,
-        count: item.count,
-      })));
+      try {
+        warehouse.consumeSubmission(id, payload.image.name, payload.legend.map((item) => ({
+          beadId: item.id,
+          count: item.count,
+        })));
+      } catch (err) {
+        await writeFile(indexPath, priorIndex, "utf8");
+        await Promise.all([
+          unlink(saved.jsonPath).catch(() => {}),
+          unlink(saved.csvPath).catch(() => {}),
+        ]);
+        throw err;
+      }
       const total = payload.legend.reduce((sum, item) => sum + item.count, 0);
       res.json({ ...saved, total });
     } catch (err) {
@@ -92,14 +105,16 @@ export function routes(store: ResultStore, warehouse: WarehouseStore): Router {
       const rows = req.file.buffer.toString("utf8").split(/\r?\n/).filter(Boolean);
       const [header, ...body] = rows;
       if (!header?.includes("编号")) { res.status(400).json({ error: "CSV 表头错误" }); return; }
+      const colsByName = header.split(",").map((c) => c.trim());
+      const idx = (name: string) => colsByName.indexOf(name);
       const imported: string[] = [];
       const errors: string[] = [];
       for (const row of body) {
         const cols = row.split(",").map((c) => c.trim());
-        if (!cols[0]) { errors.push("空编号"); continue; }
-        const id = cols[0].replace(/^"|"$/g, "");
-        const currentStock = Number(cols[2]);
-        const minStock = Number(cols[3]);
+        const id = cols[idx("编号")]?.replace(/^"|"$/g, "") ?? "";
+        if (!id) { errors.push("空编号"); continue; }
+        const currentStock = Number(cols[idx("当前库存")]);
+        const minStock = Number(cols[idx("最低库存")]);
         if (!Number.isInteger(currentStock) || !Number.isInteger(minStock)) {
           errors.push(`编号 ${id} 库存字段非法`); continue;
         }

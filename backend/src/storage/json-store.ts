@@ -7,7 +7,7 @@ import type {
 } from "@pinpin/shared";
 
 export class JsonResultStore implements ResultStore {
-  constructor(private readonly dir: string) {}
+  constructor(readonly dir: string) {}
 
   private id(now: Date = new Date()): string {
     const p = (n: number) => String(n).padStart(2, "0");
