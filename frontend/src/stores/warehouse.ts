@@ -18,6 +18,8 @@ export const useWarehouseStore = defineStore("warehouse", {
           api.listReplenish(),
           api.listSubmissions(),
         ]);
+      } catch (err) {
+        console.error("warehouse refresh failed", err);
       } finally {
         this.loading = false;
       }
