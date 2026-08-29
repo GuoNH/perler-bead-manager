@@ -7,7 +7,10 @@ import type { Box } from "./color.js";
 import type { DecodedImage } from "./decode.js";
 
 const TESSERACT_EXE =
-  process.env.TESSERACT_EXE ?? "C:\\Program Files\\Tesseract-OCR\\tesseract.exe";
+  process.env.TESSERACT_EXE ??
+  (process.platform === "win32"
+    ? "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+    : "tesseract");
 
 export interface TesseractOptions {
   whitelist?: string;
