@@ -114,9 +114,24 @@ export async function recognize(
     );
     for (const region of ordered) {
       try {
+        // 整块色块：文字通常印在色块内部。全框 OCR 会被边框/锯齿干扰，
+        // 所以往内收一个 inset、并跳过 Otsu 二值化直接喂灰度图（彩色底上的
+        // 深字/浅字都能保留对比）；紧致/周边区域维持原来的二值化路径，并用
+        // 检测到的墨迹极性作为先验。
+        const isCell = region.source === "cell";
         const res = await ocrCrop(img, region.box, {
           whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()",
-          psm: region.source === "cell" ? 6 : 7,
+          psm: isCell ? 6 : 7,
+          ...(isCell
+            ? {
+                inset: Math.max(
+                  4,
+                  Math.min(12, Math.round((region.box.y1 - region.box.y0) * 0.2)),
+                ),
+                binarize: false,
+              }
+            : {}),
+          ...(region.ink ? { polarity: region.ink === "light" ? "light" : "dark" } : {}),
         });
         const conf =
           res.words.length > 0
@@ -153,6 +168,15 @@ export async function recognize(
       warnings.push({
         level: "warn",
         message: `编号 ${merged.id} 的 OCR 置信度较低（${Math.round(merged.confidence)}），请人工核对`,
+      });
+    }
+    // 正常的图例编号是「字母前缀 + 数字」（A11 / B03）；若 OCR 把开头字母丢成
+    // 纯数字（620 实为 G20）或把末尾数字读成字母（MG 实为 M4），编号会变成
+    // 结构可疑的形状，这里单独 warn 交由人工确认，避免静默产出错误编号。
+    if (!/^[A-Z]+\d+$/.test(merged.id)) {
+      warnings.push({
+        level: "warn",
+        message: `编号 ${merged.id} 结构可疑（疑似 OCR 丢失字母/数字），请人工核对`,
       });
     }
     if (!isCount(merged.count)) {

@@ -15,9 +15,11 @@ import {
 /**
  * 图像预处理 + OCR 引擎的“友好封装”。
  *
- * 真正调用引擎（tesseract / rapidocr …）的逻辑在 engines/ 下，本模块只负责：
- * 1. 把原始图像的一个矩形区域裁剪出来；
- * 2. 灰度放大 + Otsu 二值化，自动判断“浅底深字 / 深底浅字”极性；
+ * 真正调用引擎（tesseract / tesseract.js / rapidocr …）的逻辑在 engines/ 下，
+ * 本模块只负责：
+ * 1. 把原始图像的一个矩形区域裁剪出来（可选 `inset`：往内收，避开色块边框）；
+ * 2. 放大 + 可选 Otsu 二值化；`binarize: false` 时保留灰度图（对“彩色底上
+ *    印白字/黑字”的小号图例文字通常更稳）；
  * 3. 交给当前 OCR 引擎识别，返回整段文本与逐词结果。
  *
  * 上层（recognizer/index.ts）只依赖这里导出的 `ocrCrop`，因此替换引擎时
@@ -32,6 +34,14 @@ export interface OcrCropResult {
   text: string;
   /** 引擎返回的逐词结果（含置信度） */
   words: EngineWord[];
+}
+
+/** ocrCrop 的预处理选项：在引擎 OcrOptions 基础上增加裁剪/二值化开关。 */
+export interface OcrCropOptions extends OcrOptions {
+  /** 从裁剪框四周往内收的像素数（>0 时用于“整块色块内印刷文字”，避开边框/锯齿） */
+  inset?: number;
+  /** 是否先做 Otsu 二值化；false 输出灰度图。缺省 true（保持旧行为）。 */
+  binarize?: boolean;
 }
 
 let defaultEngine: OcrEngine | null = null;
@@ -54,7 +64,7 @@ export function setOcrEngineForTests(e: OcrEngine | null): void {
 export async function ocrCrop(
   img: DecodedImage,
   box: Box,
-  opts: OcrOptions = {},
+  opts: OcrCropOptions = {},
 ): Promise<OcrCropResult> {
   const dir = await mkdtemp(join(tmpdir(), "pinpin-ocr-"));
   try {
@@ -79,7 +89,7 @@ export async function ocrCrop(
 export async function ocrText(
   img: DecodedImage,
   box: Box,
-  opts: OcrOptions = {},
+  opts: OcrCropOptions = {},
 ): Promise<string> {
   return (await ocrCrop(img, box, opts)).text;
 }
@@ -88,16 +98,17 @@ async function prepareCrop(
   img: DecodedImage,
   box: Box,
   dir: string,
-  opts: OcrOptions,
+  opts: OcrCropOptions,
 ): Promise<string> {
   const raw = Buffer.from(img.rgb);
   const src = {
     raw: { width: img.width, height: img.height, channels: 3 as const },
   };
-  const x0 = Math.max(0, Math.floor(box.x0));
-  const y0 = Math.max(0, Math.floor(box.y0));
-  const x1 = Math.min(img.width, Math.ceil(box.x1));
-  const y1 = Math.min(img.height, Math.ceil(box.y1));
+  const inset = Math.max(0, Math.floor(opts.inset ?? 0));
+  const x0 = Math.max(0, Math.floor(box.x0) + inset);
+  const y0 = Math.max(0, Math.floor(box.y0) + inset);
+  const x1 = Math.min(img.width, Math.ceil(box.x1) - inset);
+  const y1 = Math.min(img.height, Math.ceil(box.y1) - inset);
   const cropW = Math.max(1, x1 - x0);
   const cropH = Math.max(1, y1 - y0);
 
@@ -123,12 +134,19 @@ async function prepareCrop(
     .toBuffer({ resolveWithObject: true });
 
   const gray = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  const polarity = opts.polarity ?? guessPolarity(gray);
-  const threshold = otsuThreshold(gray);
-  const out = new Uint8Array(gray.length);
-  for (let i = 0; i < gray.length; i++) {
-    const v = gray[i];
-    out[i] = polarity === "dark" ? (v < threshold ? 0 : 255) : v > threshold ? 0 : 255;
+  let out: Uint8Array;
+  if (opts.binarize === false) {
+    // 直接输出灰度：彩色底上的深字/浅字都保留原始对比，交给引擎判断。
+    out = gray;
+  } else {
+    const polarity = opts.polarity ?? guessPolarity(gray);
+    const threshold = otsuThreshold(gray);
+    out = new Uint8Array(gray.length);
+    for (let i = 0; i < gray.length; i++) {
+      const v = gray[i];
+      out[i] =
+        polarity === "dark" ? (v < threshold ? 0 : 255) : v > threshold ? 0 : 255;
+    }
   }
 
   const png = await sharp(out, {
@@ -141,8 +159,29 @@ async function prepareCrop(
   return file;
 }
 
-/** 根据灰阶直方图判断墨迹极性：浅底深字 -> dark，深底浅字 -> light。 */
+/**
+ * 根据“背景色”判断墨迹极性：先取整块里占比最高的灰阶作为背景；
+ * 背景明显偏浅（>160）说明印的是深字（dark），明显偏深（<96）说明印的是
+ * 浅字（light）。仅当背景灰度居中时，才退回旧的深/浅像素占比推断。
+ */
 function guessPolarity(gray: Uint8Array): "dark" | "light" {
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+
+  let bg = 0;
+  let bgCount = 0;
+  for (let t = 0; t < 256; t++) {
+    if (hist[t] > bgCount) {
+      bgCount = hist[t];
+      bg = t;
+    }
+  }
+  if (bgCount > 0 && (bg < 96 || bg > 160)) {
+    // 背景明显偏深 -> 浅字；明显偏浅 -> 深字。
+    return bg >= 160 ? "dark" : "light";
+  }
+
+  // 背景居中（如中灰底 + 深字）：退回按深/浅像素占比推断。
   const total = gray.length;
   let dark = 0;
   let light = 0;
