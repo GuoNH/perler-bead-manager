@@ -170,4 +170,25 @@ describe("recognize", () => {
     expect(result.legend[1].count).toBe(1076);
     expect(result.warnings.some((w) => w.message.includes("结构可疑"))).toBe(true);
   });
+
+  it("无法识别的色块返回 failedCells（行/列/颜色/OCR 文本）", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "" },
+    ];
+    const result = await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(0,128,255)", label: "" },
+    ]);
+    expect(result.legend).toHaveLength(1);
+    expect(result.legend[0].id).toBe("A10");
+    expect(result.failedCells).toHaveLength(1);
+    expect(result.failedCells[0]).toMatchObject({
+      row: 1,
+      col: 2,
+      rgb: { r: 0, g: 128, b: 255 },
+    });
+    expect(result.warnings.some((w) => w.message.includes("识别失败"))).toBe(true);
+  });
 });

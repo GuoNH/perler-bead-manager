@@ -1,4 +1,5 @@
 import type {
+  FailedCell,
   LegendItem,
   RecognizeResult,
   Warning,
@@ -103,6 +104,7 @@ export async function recognize(
   const swatches = detectSwatches(img);
   const regions = planTextRegions(img, swatches);
   const warnings: Warning[] = [];
+  const failedCells: FailedCell[] = [];
   const legend: LegendItem[] = [];
 
   for (let i = 0; i < swatches.length; i++) {
@@ -153,14 +155,19 @@ export async function recognize(
     }
 
     const merged = mergeRegionReads(reads);
-    const fail = (reason: string) =>
+
+    if (!merged || !isId(merged.id)) {
+      const reason = reads.map((r) => r.text).filter(Boolean).join(" ") || "空";
       warnings.push({
         level: "warn",
         message: `第 ${s.row + 1} 行第 ${i + 1} 个图例识别失败：${reason}`,
       });
-
-    if (!merged || !isId(merged.id)) {
-      fail(reads.map((r) => r.text).filter(Boolean).join(" ") || "空");
+      failedCells.push({
+        row: s.row + 1,
+        col: i + 1,
+        rgb: sampleColor(img, s),
+        text: reason,
+      });
       continue;
     }
 
@@ -200,6 +207,7 @@ export async function recognize(
     image: { name: imageName, width: img.width, height: img.height },
     legend,
     warnings,
+    failedCells,
   };
 }
 
