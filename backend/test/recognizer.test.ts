@@ -16,11 +16,21 @@ function fakeWord(text: string): {
 /** 每个用例先设置本图的色块中心 -> 标签；mock OCR 把文字区域归给最近的色块。 */
 let bars: Array<{ cx: number; label: string }> = [];
 
+/** 记录每次 ocrCrop 收到的 box/opts，用于断言「整块色块走灰度+inset」的约定。 */
+const ocrCalls = vi.hoisted(() => ({
+  calls: [] as Array<{
+    box: { x0: number; y0: number; x1: number; y1: number };
+    opts: Record<string, unknown>;
+  }>,
+}));
+
 vi.mock("../src/recognizer/ocr.js", () => ({
   ocrCrop: async (
     _img: unknown,
     box: { x0: number; y0: number; x1: number; y1: number },
+    opts: Record<string, unknown> = {},
   ) => {
+    ocrCalls.calls.push({ box, opts });
     // 整块色块区域较高、颜色单一，OCR 读不到字（和真实引擎一致）。
     const isCell = box.y1 - box.y0 >= 40;
     if (isCell) return { text: "", words: [] };
@@ -37,6 +47,22 @@ vi.mock("../src/recognizer/ocr.js", () => ({
     return { text: best.label, words: [fakeWord(best.label)] };
   },
 }));
+
+/** 用 SVG 生成「色块 + 右侧文字」的测试图并跑 recognize。 */
+async function runSvgWithBars(w: number, h: number, entries: Array<{ x: number; color: string; label: string }>) {
+  let rects = "";
+  for (const e of entries) {
+    rects += `<rect x="${e.x}" y="40" width="60" height="60" fill="${e.color}"/>`;
+    rects += `<text x="${e.x + 75}" y="78" font-family="Arial, sans-serif" font-size="26" fill="black">${e.label}</text>`;
+  }
+  const svg = Buffer.from(
+    `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${w}" height="${h}" fill="white"/>${rects}
+    </svg>`,
+  );
+  const png = await sharp(svg).png().toBuffer();
+  return recognize("test.png", png);
+}
 
 describe("recognize", () => {
   it("pairs text printed to the right of swatches (layout-agnostic)", async () => {
@@ -99,5 +125,49 @@ describe("recognize", () => {
       { r: 0, g: 128, b: 255 },
       { r: 0, g: 180, b: 0 },
     ]);
+  });
+
+  it("整块色块传给 ocrCrop 时带 inset + binarize:false，周边文字区域不带", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "B03(56)" },
+    ];
+    await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(0,128,255)", label: "B03(56)" },
+    ]);
+
+    const cellCalls = ocrCalls.calls.filter((c) => c.box.y1 - c.box.y0 >= 40);
+    const textCalls = ocrCalls.calls.filter((c) => c.box.y1 - c.box.y0 < 40);
+    expect(cellCalls.length).toBeGreaterThan(0);
+    expect(textCalls.length).toBeGreaterThan(0);
+    for (const c of cellCalls) {
+      expect(c.opts.binarize).toBe(false);
+      expect(typeof c.opts.inset).toBe("number");
+      expect(c.opts.inset as number).toBeGreaterThanOrEqual(4);
+      expect(c.opts.psm).toBe(6);
+    }
+    for (const c of textCalls) {
+      expect("binarize" in c.opts).toBe(false);
+      expect("inset" in c.opts).toBe(false);
+    }
+  });
+
+  it("编号退化成纯数字（OCR 丢字母）时给出结构可疑警告", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "620(1076)" },
+    ];
+    const result = await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(163,90,64)", label: "620(1076)" },
+    ]);
+    expect(result.legend).toHaveLength(2);
+    expect(result.legend[0].id).toBe("A10");
+    expect(result.legend[1].id).toBe("620");
+    expect(result.legend[1].count).toBe(1076);
+    expect(result.warnings.some((w) => w.message.includes("结构可疑"))).toBe(true);
   });
 });
