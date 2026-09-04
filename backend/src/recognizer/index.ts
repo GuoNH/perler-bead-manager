@@ -4,16 +4,14 @@ import type {
   RecognizeResult,
   Warning,
 } from "@pinpin/shared";
-import { medianRgb } from "./color.js";
+import { medianRgb, type Box } from "./color.js";
 import { decodeRgb } from "./decode.js";
 import { detectSwatches } from "./legend.js";
 import { ocrCrop } from "./ocr.js";
 import { parseLegendText, type LegendParse } from "./parse.js";
 import { planTextRegions, type OcrRegion } from "./pairing.js";
 
-function sampleColor(img: { rgb: Uint8Array; width: number }, box: {
-  x0: number; y0: number; x1: number; y1: number;
-}): LegendItem["rgb"] {
+function sampleColor(img: { rgb: Uint8Array; width: number }, box: Box): LegendItem["rgb"] {
   const inset = 3;
   return medianRgb(img.rgb, img.width, {
     x0: Math.min(box.x0 + inset, box.x1 - 1),
@@ -96,6 +94,41 @@ export function mergeRegionReads(reads: RegionRead[]): {
 
 const MIN_CONFIDENCE = 45; // 低于此置信度给 warn（仍保留，由人工确认）
 
+/** 整块色块默认往内收的边距（避开边框/锯齿）。 */
+function cellInsetFor(box: Box): number {
+  return Math.max(4, Math.min(12, Math.round((box.y1 - box.y0) * 0.2)));
+}
+
+/** 读取一个 OCR 区域并解析。insetOverride 只对“整块色块”生效（抢救时用更小/零 inset）。 */
+async function readRegion(
+  img: Awaited<ReturnType<typeof decodeRgb>>,
+  region: OcrRegion,
+  opts: { insetOverride?: number } = {},
+): Promise<RegionRead> {
+  const isCell = region.source === "cell";
+  const res = await ocrCrop(img, region.box, {
+    whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()",
+    psm: isCell ? 6 : 7,
+    ...(isCell
+      ? {
+          inset: opts.insetOverride ?? cellInsetFor(region.box),
+          binarize: false,
+        }
+      : {}),
+    ...(region.ink ? { polarity: region.ink === "light" ? "light" : "dark" } : {}),
+  });
+  const confidence =
+    res.words.length > 0
+      ? res.words.reduce((acc, w) => acc + w.confidence, 0) / res.words.length
+      : 0;
+  return {
+    region,
+    text: res.text,
+    confidence,
+    parse: parseLegendText(res.text),
+  };
+}
+
 export async function recognize(
   imageName: string,
   input: Buffer,
@@ -106,9 +139,14 @@ export async function recognize(
   const warnings: Warning[] = [];
   const failedCells: FailedCell[] = [];
   const legend: LegendItem[] = [];
+  // 同一条带（row）内按出现顺序编号的列号，供错误/补录信息定位到格。
+  const colInRow = new Map<number, number>();
 
   for (let i = 0; i < swatches.length; i++) {
     const s = swatches[i];
+    const row = s.row + 1;
+    const col = (colInRow.get(s.row) ?? 0) + 1;
+    colInRow.set(s.row, col);
     const reads: RegionRead[] = [];
     // 整块色块优先读（印在内部的文字），再用紧致/周边区域补细节。
     const ordered = [...regions[i]].sort(
@@ -120,51 +158,44 @@ export async function recognize(
         // 所以往内收一个 inset、并跳过 Otsu 二值化直接喂灰度图（彩色底上的
         // 深字/浅字都能保留对比）；紧致/周边区域维持原来的二值化路径，并用
         // 检测到的墨迹极性作为先验。
-        const isCell = region.source === "cell";
-        const res = await ocrCrop(img, region.box, {
-          whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()",
-          psm: isCell ? 6 : 7,
-          ...(isCell
-            ? {
-                inset: Math.max(
-                  4,
-                  Math.min(12, Math.round((region.box.y1 - region.box.y0) * 0.2)),
-                ),
-                binarize: false,
-              }
-            : {}),
-          ...(region.ink ? { polarity: region.ink === "light" ? "light" : "dark" } : {}),
-        });
-        const conf =
-          res.words.length > 0
-            ? res.words.reduce((acc, w) => acc + w.confidence, 0) / res.words.length
-            : 0;
-        reads.push({
-          region,
-          text: res.text,
-          confidence: conf,
-          parse: parseLegendText(res.text),
-        });
+        reads.push(await readRegion(img, region));
       } catch (err) {
         warnings.push({
           level: "error",
-          message: `第 ${s.row + 1} 行第 ${i + 1} 个图例 OCR 失败：${err instanceof Error ? err.message : String(err)}`,
+          message: `第 ${row} 行第 ${col} 个图例 OCR 失败：${err instanceof Error ? err.message : String(err)}`,
         });
         break;
       }
     }
 
-    const merged = mergeRegionReads(reads);
+    let merged = mergeRegionReads(reads);
+
+    // 主结果缺编号、或编号结构可疑（如 620 实为 G20、MG 实为 M4）时，很可能是
+    // inset 把印在色块边缘的前缀字母裁掉了：用零/减半 inset 重读整块，再按
+    // 解析完整度择优（G20(1076) 会比 620(1076) 得分更高）。
+    if (!merged || !isId(merged.id) || !/^[A-Z]+\d+$/.test(merged.id)) {
+      const baseInset = cellInsetFor(s);
+      for (const inset of [0, Math.max(1, Math.floor(baseInset / 2))]) {
+        try {
+          reads.push(
+            await readRegion(img, { box: s, source: "cell" }, { insetOverride: inset }),
+          );
+        } catch {
+          // 抢救失败不影响主结果，忽略。
+        }
+      }
+      merged = mergeRegionReads(reads);
+    }
 
     if (!merged || !isId(merged.id)) {
       const reason = reads.map((r) => r.text).filter(Boolean).join(" ") || "空";
       warnings.push({
         level: "warn",
-        message: `第 ${s.row + 1} 行第 ${i + 1} 个图例识别失败：${reason}`,
+        message: `第 ${row} 行第 ${col} 个图例识别失败：${reason}`,
       });
       failedCells.push({
-        row: s.row + 1,
-        col: i + 1,
+        row,
+        col,
         rgb: sampleColor(img, s),
         text: reason,
       });
@@ -177,9 +208,8 @@ export async function recognize(
         message: `编号 ${merged.id} 的 OCR 置信度较低（${Math.round(merged.confidence)}），请人工核对`,
       });
     }
-    // 正常的图例编号是「字母前缀 + 数字」（A11 / B03）；若 OCR 把开头字母丢成
-    // 纯数字（620 实为 G20）或把末尾数字读成字母（MG 实为 M4），编号会变成
-    // 结构可疑的形状，这里单独 warn 交由人工确认，避免静默产出错误编号。
+    // 正常的图例编号是「字母前缀 + 数字」（A11 / B03）；抢救后仍结构可疑的
+    // 编号（纯数字 620、纯字母 MG）交给人工确认，避免静默产出错误编号。
     if (!/^[A-Z]+\d+$/.test(merged.id)) {
       warnings.push({
         level: "warn",

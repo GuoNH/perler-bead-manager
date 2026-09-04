@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { recognize } from "../src/recognizer/index.js";
 
 function fakeWord(text: string): {
@@ -24,6 +24,9 @@ const ocrCalls = vi.hoisted(() => ({
   }>,
 }));
 
+/** 零 inset 抢救重读时整块色块返回的文本（默认空=读不到，和真实一致）。 */
+const rescue = vi.hoisted(() => ({ inset0Text: "" }));
+
 vi.mock("../src/recognizer/ocr.js", () => ({
   ocrCrop: async (
     _img: unknown,
@@ -31,9 +34,15 @@ vi.mock("../src/recognizer/ocr.js", () => ({
     opts: Record<string, unknown> = {},
   ) => {
     ocrCalls.calls.push({ box, opts });
-    // 整块色块区域较高、颜色单一，OCR 读不到字（和真实引擎一致）。
+    // 整块色块区域较高、颜色单一，OCR 读不到字（和真实引擎一致）；
+    // 但零 inset 的“抢救重读”能读回印在色块边缘的文字。
     const isCell = box.y1 - box.y0 >= 40;
-    if (isCell) return { text: "", words: [] };
+    if (isCell) {
+      if (opts.inset === 0 && rescue.inset0Text) {
+        return { text: rescue.inset0Text, words: [fakeWord(rescue.inset0Text)] };
+      }
+      return { text: "", words: [] };
+    }
     const cx = (box.x0 + box.x1) / 2;
     let best = bars[0];
     let bestD = Infinity;
@@ -65,6 +74,10 @@ async function runSvgWithBars(w: number, h: number, entries: Array<{ x: number; 
 }
 
 describe("recognize", () => {
+  beforeEach(() => {
+    rescue.inset0Text = "";
+  });
+
   it("pairs text printed to the right of swatches (layout-agnostic)", async () => {
     bars = [
       { cx: 50, label: "A10(202)" },
@@ -169,6 +182,57 @@ describe("recognize", () => {
     expect(result.legend[1].id).toBe("620");
     expect(result.legend[1].count).toBe(1076);
     expect(result.warnings.some((w) => w.message.includes("结构可疑"))).toBe(true);
+  });
+
+  it("纯数字编号结构可疑时用零 inset 抢救重读（620 -> G20）", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "620(1076)" },
+    ];
+    rescue.inset0Text = "G20(1076)";
+    const result = await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(163,90,64)", label: "620(1076)" },
+    ]);
+    expect(result.legend).toHaveLength(2);
+    expect(result.legend[1]).toMatchObject({ id: "G20", count: 1076 });
+    expect(result.warnings.some((w) => w.message.includes("结构可疑"))).toBe(false);
+    // 抢救确实发起过一次零 inset 的整块灰度读取
+    expect(
+      ocrCalls.calls.some((c) => c.opts.inset === 0 && c.opts.binarize === false),
+    ).toBe(true);
+  });
+
+  it("纯字母编号结构可疑时用零 inset 抢救重读（MG -> M4）", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "MG(64)" },
+    ];
+    rescue.inset0Text = "M4(64)";
+    const result = await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(226,208,187)", label: "MG(64)" },
+    ]);
+    expect(result.legend).toHaveLength(2);
+    expect(result.legend[1]).toMatchObject({ id: "M4", count: 64 });
+    expect(result.warnings.some((w) => w.message.includes("结构可疑"))).toBe(false);
+  });
+
+  it("主结果编号合法时不触发零 inset 抢救", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "B03(56)" },
+    ];
+    rescue.inset0Text = "B03(999)";
+    const result = await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(0,128,255)", label: "B03(56)" },
+    ]);
+    expect(result.legend[1]).toMatchObject({ id: "B03", count: 56 });
+    expect(ocrCalls.calls.some((c) => c.opts.inset === 0)).toBe(false);
   });
 
   it("无法识别的色块返回 failedCells（行/列/颜色/OCR 文本）", async () => {
