@@ -12,7 +12,9 @@
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "multer": "^2.0.1",
-    "sharp": "^0.34.1"
+    "sharp": "^0.34.1",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
