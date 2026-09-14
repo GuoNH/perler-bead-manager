@@ -6,8 +6,32 @@ import SubmissionsView from "./views/SubmissionsView.vue";
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/", component: UploadView },
-    { path: "/inventory", component: InventoryView },
-    { path: "/submissions", component: SubmissionsView },
+    {
+      path: "/",
+      component: UploadView,
+      meta: {
+        eyebrow: "RECOGNIZE",
+        title: "上传识别",
+        description: "从图纸图例提取颜色、编号与数量，确认后同步扣减库存。",
+      },
+    },
+    {
+      path: "/inventory",
+      component: InventoryView,
+      meta: {
+        eyebrow: "INVENTORY",
+        title: "仓库台账",
+        description: "查看库存水位、补充预警和每个色号的累计消耗。",
+      },
+    },
+    {
+      path: "/submissions",
+      component: SubmissionsView,
+      meta: {
+        eyebrow: "HISTORY",
+        title: "提交记录",
+        description: "追踪每一次图纸提交，需要时可撤销并回补库存。",
+      },
+    },
   ],
 });
