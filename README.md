@@ -8,10 +8,10 @@
 
 ## 功能
 
-- **图纸识别**：上传或拖拽 JPEG、PNG 图片，识别图例中的颜色块、编号和数量。
+- **图纸识别**：上传或拖拽 JPEG、PNG、WebP 等常见图片，识别图例中的颜色块、编号和数量。
 - **人工校正**：提交前可修改编号、数量和颜色，也可新增或删除图例条目。
 - **失败补录**：无法识别编号的色块会单独列出原图位置、颜色和 OCR 文本，便于逐项补录。
-- **OCR 自动回退**：优先使用本机 Tesseract；未安装时自动退回内置 tesseract.js WASM。
+- **OCR 自动回退**：优先使用本机 Tesseract；未安装或无法执行时自动退回内置 tesseract.js WASM。
 - **结果导出**：每次提交会生成 JSON 和 CSV 文件，方便归档或使用 Excel 打开。
 - **仓库台账**：维护每个拼豆编号的当前库存、最低库存、颜色、位置、供应商和备注。
 - **库存消耗**：提交图纸后，按图例数量自动扣减对应库存，并记录提交流水。
@@ -35,7 +35,7 @@
 
 - **Node.js 24 LTS（推荐）**。后端使用内置的 `node:sqlite`，请勿使用 Node.js 18。
 - npm 11 或与 Node.js 配套的 npm 版本。
-- 系统 Tesseract 为可选依赖。默认识别流程会优先使用本机 `tesseract`，不可用时自动退回 tesseract.js WASM。
+- 系统 Tesseract 为可选依赖。默认识别流程会优先使用本机 `tesseract`，未安装或无法执行时自动退回 tesseract.js WASM。
 - 首次运行前端端到端测试时，需要安装 Playwright Chromium。
 
 系统 Tesseract 通常速度更快。需要时可按以下方式安装：
@@ -187,6 +187,41 @@ npm test
 | `GET` | `/submissions` | 获取提交记录 |
 | `POST` | `/submissions/:id/revert` | 撤销提交并回补库存 |
 
+识别响应示例：
+
+```json
+{
+  "image": {
+    "name": "图纸.jpg",
+    "width": 1200,
+    "height": 800
+  },
+  "legend": [
+    {
+      "id": "A10",
+      "rgb": { "r": 254, "g": 169, "b": 72 },
+      "count": 202
+    }
+  ],
+  "warnings": [
+    {
+      "level": "warn",
+      "message": "编号 B03 的 OCR 置信度较低，请人工核对"
+    }
+  ],
+  "failedCells": [
+    {
+      "row": 4,
+      "col": 3,
+      "rgb": { "r": 248, "g": 54, "b": 88 },
+      "text": "OCR 原文"
+    }
+  ]
+}
+```
+
+`failedCells` 是需要人工补录的色块。`warnings` 的级别为 `info`、`warn` 或 `error`。
+
 提交示例：
 
 ```json
@@ -204,6 +239,17 @@ npm test
     }
   ],
   "confirmedAt": "2026-09-14T12:00:00.000Z"
+}
+```
+
+提交成功响应：
+
+```json
+{
+  "id": "1789396800000",
+  "jsonPath": "/path/to/data/1789396800000.json",
+  "csvPath": "/path/to/data/1789396800000.csv",
+  "total": 202
 }
 ```
 
