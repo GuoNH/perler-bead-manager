@@ -33,3 +33,16 @@ export interface Submission {
   revertedAt: string | null;
   lines: Array<{ beadId: string; count: number }>;
 }
+
+export interface BatchItemInput {
+  id: string;
+  /** 累加到当前库存的数量（批量补货）。 */
+  amount?: number;
+  /** 覆盖最低库存线（安全线）。 */
+  minStock?: number;
+}
+
+export interface BatchUpdateResult {
+  updated: number;
+  errors: string[];
+}

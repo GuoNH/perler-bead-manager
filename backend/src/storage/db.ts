@@ -30,6 +30,32 @@ export function openDb(path: string): DatabaseSync {
     );
     CREATE INDEX IF NOT EXISTS idx_consumption_bead ON consumption_lines(bead_id);
     CREATE INDEX IF NOT EXISTS idx_consumption_submission ON consumption_lines(submission_id);
+
+    CREATE TABLE IF NOT EXISTS drawing_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      parent_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS drawings (
+      id TEXT PRIMARY KEY,
+      submission_id TEXT,
+      image_name TEXT NOT NULL,
+      image_ext TEXT NOT NULL DEFAULT '',
+      category_id TEXT REFERENCES drawing_categories(id),
+      width INTEGER NOT NULL DEFAULT 0,
+      height INTEGER NOT NULL DEFAULT 0,
+      total_beads INTEGER NOT NULL DEFAULT 0,
+      color_count INTEGER NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_drawings_category ON drawings(category_id);
   `);
   return db;
 }

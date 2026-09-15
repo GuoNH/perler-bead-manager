@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import type { InventorySummary } from "@pinpin/shared";
+import type { BatchUpdateResult, InventorySummary } from "@pinpin/shared";
 import InventoryTable from "../components/InventoryTable.vue";
 import InventoryForm from "../components/InventoryForm.vue";
 import ReplenishPanel from "../components/ReplenishPanel.vue";
+import BatchPanel from "../components/BatchPanel.vue";
 import { useWarehouseStore } from "../stores/warehouse.js";
-import { importInventory } from "../api/warehouse.js";
+import { batchUpdate, importInventory } from "../api/warehouse.js";
 
 const store = useWarehouseStore();
 const showForm = ref(false);
@@ -13,6 +14,8 @@ const editing = ref<InventorySummary | null>(null);
 const csvInput = ref<HTMLInputElement | null>(null);
 const search = ref("");
 const importing = ref(false);
+const replenishing = ref(false);
+const batchMode = ref<"replenish" | "minStock" | null>(null);
 const notice = ref<{ type: "success" | "warning" | "danger"; message: string } | null>(null);
 
 onMounted(() => store.refresh());
@@ -42,6 +45,44 @@ function openEdit(item: InventorySummary) {
 function closeForm() {
   showForm.value = false;
   editing.value = null;
+}
+
+function openBatch(mode: "replenish" | "minStock") {
+  batchMode.value = mode;
+}
+function closeBatch() {
+  batchMode.value = null;
+}
+
+async function onBatchSaved(result: BatchUpdateResult) {
+  await store.refresh();
+  closeBatch();
+  notice.value = {
+    type: result.errors.length ? "warning" : "success",
+    message: result.errors.length
+      ? `批量操作完成：已更新 ${result.updated} 条，${result.errors.length} 条失败：${result.errors.slice(0, 5).join("；")}${result.errors.length > 5 ? "…" : ""}`
+      : `批量操作完成：已更新 ${result.updated} 条。`,
+  };
+}
+
+async function replenishAll() {
+  replenishing.value = true;
+  notice.value = null;
+  try {
+    const items = store.replenish.map((r) => ({ id: r.id, amount: r.deficit }));
+    const result = await batchUpdate(items);
+    await store.refresh();
+    notice.value = {
+      type: result.errors.length ? "warning" : "success",
+      message: result.errors.length
+        ? `一键补满完成：已补 ${result.updated} 条，${result.errors.length} 条失败。`
+        : `一键补满完成：已补 ${result.updated} 条至安全线。`,
+    };
+  } catch (err) {
+    notice.value = { type: "danger", message: err instanceof Error ? err.message : "补货失败" };
+  } finally {
+    replenishing.value = false;
+  }
 }
 
 async function onCsv(ev: Event) {
@@ -84,6 +125,19 @@ async function onCsv(ev: Event) {
             <path d="M12 4v12M8 12l4 4 4-4M5 19h14" />
           </svg>
           {{ importing ? "导入中..." : "CSV 导入" }}
+        </button>
+        <button class="btn" type="button" @click="openBatch('replenish')">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v12M8 12l4 4 4-4M5 19h14" />
+          </svg>
+          批量补货
+        </button>
+        <button class="btn" type="button" @click="openBatch('minStock')">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7.5 12 4l8 3.5-8 3.5-8-3.5Z" />
+            <path d="m4 12 8 3.5 8-3.5" />
+          </svg>
+          批量安全线
         </button>
         <button class="btn btn-primary" type="button" @click="openNew">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -148,7 +202,7 @@ async function onCsv(ev: Event) {
       </article>
     </section>
 
-    <ReplenishPanel :items="store.replenish" />
+    <ReplenishPanel :items="store.replenish" :busy="replenishing" @replenish-all="replenishAll" />
 
     <section class="inventory-section section-card">
       <div class="section-heading inventory-heading">
@@ -175,6 +229,8 @@ async function onCsv(ev: Event) {
       @close="closeForm"
       @saved="store.refresh(); closeForm()"
     />
+
+    <BatchPanel v-if="batchMode" :mode="batchMode" @close="closeBatch" @saved="onBatchSaved" />
   </main>
 </template>
 

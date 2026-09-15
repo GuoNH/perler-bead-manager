@@ -32,6 +32,8 @@ export interface ImageMeta {
 
 export interface RecognizeResult {
   image: ImageMeta;
+  /** 识别时临时保存的图片文件名（不含路径），提交时用于归档到图纸库。 */
+  tempImageName?: string;
   legend: LegendItem[];
   warnings: Warning[];
   failedCells: FailedCell[];
@@ -39,8 +41,51 @@ export interface RecognizeResult {
 
 export interface SubmitPayload {
   image: ImageMeta;
+  /** 识别阶段临时保存的图片文件名，提交时用于归档。 */
+  tempImageName?: string;
+  /** 是否归档到图纸库，默认为 true。 */
+  shouldArchive?: boolean;
+  /** 归档到图纸库时使用的显示名称，为空则使用原文件名。 */
+  archiveName?: string;
   legend: LegendItem[];
   confirmedAt: string;
+}
+
+/** 图纸分类。 */
+export interface DrawingCategory {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DrawingCategoryInput {
+  name: string;
+  parentId?: string | null;
+  sortOrder?: number;
+}
+
+/** 图纸库条目。 */
+export interface Drawing {
+  id: string;
+  submissionId: string | null;
+  imageName: string;
+  imageExt: string;
+  categoryId: string | null;
+  width: number;
+  height: number;
+  totalBeads: number;
+  colorCount: number;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DrawingInput {
+  categoryId?: string | null;
+  note?: string;
 }
 
 export interface RecognitionRecord extends SubmitPayload {

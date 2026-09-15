@@ -1,4 +1,10 @@
-import type { InventoryItemInput, InventorySummary, Submission } from "@pinpin/shared";
+import type {
+  BatchItemInput,
+  BatchUpdateResult,
+  InventoryItemInput,
+  InventorySummary,
+  Submission,
+} from "@pinpin/shared";
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "请求失败");
@@ -16,6 +22,13 @@ export async function upsertInventory(id: string, input: InventoryItemInput): Pr
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+  }));
+}
+export async function batchUpdate(items: BatchItemInput[]): Promise<BatchUpdateResult> {
+  return json(await fetch("/api/inventory/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
   }));
 }
 export async function importInventory(file: File): Promise<{ imported: number; skipped: number; errors: string[] }> {

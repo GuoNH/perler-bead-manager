@@ -8,6 +8,7 @@ const navItems = [
   { to: "/", label: "上传识别", hint: "读取图纸", icon: "scan" },
   { to: "/inventory", label: "仓库台账", hint: "库存管理", icon: "inventory" },
   { to: "/submissions", label: "提交记录", hint: "消耗流水", icon: "history" },
+  { to: "/drawings", label: "图纸库", hint: "归档浏览", icon: "drawings" },
 ];
 
 const page = computed(() => ({
@@ -39,6 +40,9 @@ const page = computed(() => ({
             <svg v-else-if="item.icon === 'inventory'" viewBox="0 0 24 24">
               <path d="M4 7.5 12 4l8 3.5-8 3.5-8-3.5Z" />
               <path d="m4 12 8 3.5 8-3.5M4 16.5 12 20l8-3.5" />
+            </svg>
+            <svg v-else-if="item.icon === 'drawings'" viewBox="0 0 24 24">
+              <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8M12 8v8" />
             </svg>
             <svg v-else viewBox="0 0 24 24">
               <path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.68" />
@@ -94,6 +98,9 @@ const page = computed(() => ({
         <svg v-else-if="item.icon === 'inventory'" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 7.5 12 4l8 3.5-8 3.5-8-3.5Z" />
           <path d="m4 12 8 3.5 8-3.5M4 16.5 12 20l8-3.5" />
+        </svg>
+        <svg v-else-if="item.icon === 'drawings'" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8M12 8v8" />
         </svg>
         <svg v-else viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 12a8 8 0 1 0 2.34-5.66L4 8.68" />

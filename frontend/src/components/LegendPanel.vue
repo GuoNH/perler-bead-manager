@@ -30,6 +30,10 @@ watch(
   { immediate: true },
 );
 
+/** 当前高亮的图例行索引（用于点击警告后闪烁效果） */
+const highlightIndex = ref(-1);
+let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+
 function cellKey(c: { row: number; col: number }) {
   return `${c.row}-${c.col}`;
 }
@@ -76,6 +80,35 @@ function remove(index: number) {
 function add() {
   store.updateLegend([...legend.value, { id: "", rgb: { r: 231, g: 96, b: 72 }, count: 0 }]);
 }
+
+/* ── 滚动跳转 ── */
+
+function scrollToSection(id: string) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** 点击警告项 → 滚动到对应图例行并闪烁高亮 */
+function onWarningClick(w: Warning) {
+  const ids = mentionedIds(w);
+  if (!ids.length) return;
+  // 找到第一个匹配的图例行索引
+  const idx = legend.value.findIndex(
+    (item) => ids.some((id) => item.id.trim().toUpperCase() === id.toUpperCase()),
+  );
+  if (idx === -1) return;
+  // 滚动到该行
+  const rowEl = document.querySelector(`[data-legend-index="${idx}"]`);
+  if (rowEl) {
+    rowEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    // 闪烁高亮
+    highlightIndex.value = idx;
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => {
+      highlightIndex.value = -1;
+    }, 2000);
+  }
+}
 </script>
 
 <template>
@@ -89,13 +122,14 @@ function add() {
       <span class="badge accent">{{ legend.length }} 个色号</span>
     </div>
 
-    <div v-if="warnings.length" class="warnings" data-testid="warnings">
+    <div v-if="warnings.length" id="legend-warnings" class="warnings" data-testid="warnings">
       <article
         v-for="(w, i) in warnings"
         :key="i"
         class="warning-item"
-        :class="w.level"
+        :class="[w.level, { clickable: mentionedIds(w).length }]"
         data-testid="warning"
+        @click="onWarningClick(w)"
       >
         <span class="warning-icon" aria-hidden="true">
           <svg v-if="w.level === 'info'" viewBox="0 0 24 24">
@@ -114,7 +148,7 @@ function add() {
       </article>
     </div>
 
-    <section v-if="failedCells.length" class="failed" data-testid="failed-cells">
+    <section v-if="failedCells.length" id="legend-failed" class="failed" data-testid="failed-cells">
       <header class="failed-header">
         <div>
           <span class="badge danger">待补录</span>
@@ -149,7 +183,7 @@ function add() {
       </div>
     </section>
 
-    <div v-if="legend.length" class="legend-table">
+    <div v-if="legend.length" id="legend-table" class="legend-table">
       <div class="legend-row legend-table-head" aria-hidden="true">
         <span>颜色</span>
         <span>编号</span>
@@ -160,7 +194,8 @@ function add() {
         v-for="(item, i) in legend"
         :key="i"
         class="legend-row"
-        :class="{ suspect: isSuspect(item) }"
+        :class="{ suspect: isSuspect(item), highlight: highlightIndex === i }"
+        :data-legend-index="i"
       >
         <label class="color-field">
           <span class="swatch" :style="{ background: toHex(item.rgb) }"></span>
@@ -246,6 +281,21 @@ function add() {
   color: #8e3d38;
   border-color: #edc4c1;
   background: var(--danger-soft);
+}
+
+.warning-item.clickable {
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.warning-item.clickable:hover {
+  transform: translateX(3px);
+  box-shadow: 0 3px 12px rgba(47, 40, 31, 0.08);
+}
+
+.warning-item.clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .warning-icon {
@@ -424,6 +474,17 @@ function add() {
 .legend-row.suspect input {
   border-color: #dfb75c;
   background: #fffdf6;
+}
+
+/* 警告跳转闪烁高亮 */
+.legend-row.highlight {
+  animation: legend-flash 2s ease-out;
+}
+
+@keyframes legend-flash {
+  0% { background: #fff1d0; box-shadow: inset 0 0 0 2px #dfb75c; }
+  30% { background: #fff1d0; box-shadow: inset 0 0 0 2px #dfb75c; }
+  100% { background: var(--surface); box-shadow: inset 0 0 0 0 transparent; }
 }
 
 .color-field {

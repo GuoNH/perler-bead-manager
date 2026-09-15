@@ -1,5 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import type {
+  BatchItemInput,
+  BatchUpdateResult,
   InventoryItem,
   InventoryItemInput,
   InventorySummary,
@@ -79,6 +81,56 @@ export class WarehouseStore {
 
   listReplenish(): InventorySummary[] {
     return this.listInventory().filter((x) => x.currentStock < x.minStock);
+  }
+
+  countInventory(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS c FROM inventory_items")
+      .get() as { c: number };
+    return row.c;
+  }
+
+  batchApply(items: BatchItemInput[]): BatchUpdateResult {
+    const now = new Date().toISOString();
+    const errors: string[] = [];
+    let updated = 0;
+    const ensureItem = this.db.prepare(
+      `INSERT OR IGNORE INTO inventory_items
+        (id, color, current_stock, min_stock, unit, note, location, supplier, created_at, updated_at)
+       VALUES (?, '', 0, 0, '颗', '', '', '', ?, ?)`,
+    );
+    const addStock = this.db.prepare(
+      "UPDATE inventory_items SET current_stock = current_stock + ?, updated_at = ? WHERE id = ?",
+    );
+    const setMinStock = this.db.prepare(
+      "UPDATE inventory_items SET min_stock = ?, updated_at = ? WHERE id = ?",
+    );
+    this.db.exec("BEGIN");
+    try {
+      for (const item of items) {
+        const id = String(item.id ?? "").trim();
+        if (!id) { errors.push("空编号"); continue; }
+        const { amount, minStock } = item;
+        if (amount === undefined && minStock === undefined) {
+          errors.push(`${id} 缺少数量或安全线`); continue;
+        }
+        if (amount !== undefined && (!Number.isInteger(amount) || amount < 0)) {
+          errors.push(`${id} 数量非法`); continue;
+        }
+        if (minStock !== undefined && (!Number.isInteger(minStock) || minStock < 0)) {
+          errors.push(`${id} 安全线非法`); continue;
+        }
+        ensureItem.run(id, now, now);
+        if (amount !== undefined) addStock.run(amount, now, id);
+        if (minStock !== undefined) setMinStock.run(minStock, now, id);
+        updated++;
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    return { updated, errors };
   }
 
   deleteItem(id: string): void {

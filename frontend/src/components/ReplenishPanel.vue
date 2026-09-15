@@ -2,7 +2,8 @@
 import { computed } from "vue";
 import type { InventorySummary } from "@pinpin/shared";
 
-const props = defineProps<{ items: InventorySummary[] }>();
+const props = defineProps<{ items: InventorySummary[]; busy?: boolean }>();
+const emit = defineEmits<{ replenishAll: [] }>();
 const sorted = computed(() => [...props.items].sort((a, b) => b.deficit - a.deficit));
 
 function cssColor(value: string) {
@@ -28,9 +29,23 @@ function cssColor(value: string) {
           <p v-else>所有色号都高于最低库存线，暂无补充任务。</p>
         </div>
       </div>
-      <span class="badge" :class="sorted.length ? 'warning' : 'success'">
-        {{ sorted.length ? `${sorted.length} 个待处理` : "库存健康" }}
-      </span>
+      <div class="replenish-actions">
+        <button
+          v-if="sorted.length"
+          class="btn btn-soft"
+          type="button"
+          :disabled="busy"
+          @click="emit('replenishAll')"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v12M8 12l4 4 4-4M5 19h14" />
+          </svg>
+          {{ busy ? "补货中..." : "一键补满" }}
+        </button>
+        <span class="badge" :class="sorted.length ? 'warning' : 'success'">
+          {{ sorted.length ? `${sorted.length} 个待处理` : "库存健康" }}
+        </span>
+      </div>
     </div>
 
     <div v-if="sorted.length" class="replenish-list">
@@ -75,6 +90,14 @@ function cssColor(value: string) {
 .replenish-heading {
   align-items: center;
   margin-bottom: 17px;
+}
+
+.replenish-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .replenish-title {
