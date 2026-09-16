@@ -22,6 +22,28 @@ describe("warehouse api", () => {
     db.close();
   });
 
+  it("adds replenishment amounts to the current stock", async () => {
+    const db = openDb(":memory:");
+    const warehouse = new WarehouseStore(db);
+    const app = createApp(new JsonResultStore("data-test"), warehouse);
+    await request(app)
+      .put("/api/inventory/A10")
+      .send({ currentStock: 0, minStock: 10 })
+      .expect(200);
+
+    await request(app)
+      .post("/api/inventory/batch")
+      .send({ items: [{ id: "A10", amount: 10 }] })
+      .expect(200)
+      .expect({ updated: 1, errors: [] });
+
+    const inventory = await request(app).get("/api/inventory").expect(200);
+    expect(inventory.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "A10", currentStock: 10, minStock: 10, deficit: 0 }),
+    ]));
+    db.close();
+  });
+
   it("imports inventory from a reordered CSV header by column name", async () => {
     const db = openDb(":memory:");
     const warehouse = new WarehouseStore(db);
