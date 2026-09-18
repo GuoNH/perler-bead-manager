@@ -16,8 +16,13 @@ data/
 # Environment
 .env
 .env.*
+.DS_Store
+logs/
 test-results/
 playwright-report/
 
 # Local OCR debugging scripts (read 图纸.jpg, write artifacts to /tmp)
 backend/eval-*.ts
+
+# pm2 配置（含本机绝对路径与访问密码，勿提交）
+ecosystem.config.js

@@ -17,6 +17,8 @@ export interface FailedCell {
   rgb: RGB;
   /** OCR 原文或失败原因；可能为空串。 */
   text: string;
+  /** 失败色块的裁剪图（PNG base64 data URL），供前端对照补录。 */
+  imageDataUrl?: string;
 }
 
 export interface Warning {

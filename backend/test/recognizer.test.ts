@@ -255,4 +255,18 @@ describe("recognize", () => {
     });
     expect(result.warnings.some((w) => w.message.includes("识别失败"))).toBe(true);
   });
+
+  it("失败色块附带裁剪图 data URL（供前端对照补录）", async () => {
+    ocrCalls.calls = [];
+    bars = [
+      { cx: 50, label: "A10(202)" },
+      { cx: 290, label: "" },
+    ];
+    const result = await runSvgWithBars(480, 140, [
+      { x: 20, color: "rgb(255,0,0)", label: "A10(202)" },
+      { x: 260, color: "rgb(0,128,255)", label: "" },
+    ]);
+    expect(result.failedCells).toHaveLength(1);
+    expect(result.failedCells[0].imageDataUrl).toMatch(/^data:image\/png;base64,/);
+  });
 });

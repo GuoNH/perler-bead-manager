@@ -37,4 +37,4 @@ echo ""
 
 export HOST="::"
 export PORT=3001
-exec node backend/dist/index.js
+exec node backend/dist/server.js

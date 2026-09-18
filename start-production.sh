@@ -26,4 +26,4 @@ echo "[4/4] 启动后端服务..."
 echo "   访问地址: http://localhost:3001"
 echo "   按 Ctrl+C 停止"
 echo ""
-exec node backend/dist/index.js
+exec node backend/dist/server.js

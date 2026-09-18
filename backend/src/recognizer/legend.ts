@@ -65,6 +65,7 @@ const MIN_CELLS_IN_BAND = 3; // 至少 3 个色块才算图例行
 const GAP_MIN = 3;
 const MIN_CELL_WIDTH = 24;
 const COLUMN_CLUSTER_RADIUS = 14;
+const LEGEND_SECTION_GAP = 24;
 const CONTENT_COLORFUL_RATIO = 0.03;
 const CONTENT_TEXT_RATIO = 0.015;
 const TEXT_DISTANCE = 160;
@@ -143,13 +144,16 @@ function detectBands(
   );
   if (realBands.length === 0) return [];
 
+  // 图案区也可能出现连续的同色长条；色卡通常是最靠下且自成一段的条带组。
+  const legendBands = selectBottomLegendSection(realBands);
+
   // --- 7. 所有条带共享同一套列边界（抑制单行噪声） ------------------------
-  const boundaries = alignColumns(realBands, w);
+  const boundaries = alignColumns(legendBands, w);
 
   // --- 8. 内容检查后输出色块 ---------------------------------------------
   const swatches: Swatch[] = [];
-  for (let bi = 0; bi < realBands.length; bi++) {
-    const { band } = realBands[bi];
+  for (let bi = 0; bi < legendBands.length; bi++) {
+    const { band } = legendBands[bi];
     for (let ci = 0; ci < boundaries.length - 1; ci++) {
       const x0 = boundaries[ci];
       const x1 = boundaries[ci + 1];
@@ -159,6 +163,19 @@ function detectBands(
     }
   }
   return swatches;
+}
+
+function selectBottomLegendSection<T extends { band: Band }>(bands: T[]): T[] {
+  const sections: T[][] = [];
+  for (const band of bands) {
+    const current = sections[sections.length - 1];
+    if (current && band.band.start - current[current.length - 1].band.end <= LEGEND_SECTION_GAP) {
+      current.push(band);
+    } else {
+      sections.push([band]);
+    }
+  }
+  return sections[sections.length - 1];
 }
 
 function rowRuns(y: number, colorful: Uint8Array, w: number): Array<[number, number]> {

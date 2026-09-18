@@ -4,6 +4,7 @@ import type {
   RecognizeResult,
   Warning,
 } from "@pinpin/shared";
+import sharp from "sharp";
 import { medianRgb, type Box } from "./color.js";
 import { decodeRgb } from "./decode.js";
 import { detectSwatches } from "./legend.js";
@@ -19,6 +20,28 @@ function sampleColor(img: { rgb: Uint8Array; width: number }, box: Box): LegendI
     x1: Math.max(box.x0 + inset + 1, box.x1 - inset),
     y1: Math.max(box.y0 + inset + 1, box.y1 - inset),
   });
+}
+
+/** 裁剪失败色块周边区域并放大成 PNG data URL，供前端对照补录。 */
+async function cropSwatchImage(
+  input: Buffer,
+  img: { width: number; height: number },
+  box: Box,
+): Promise<string> {
+  const pad = 4;
+  const x0 = Math.max(0, Math.floor(box.x0) - pad);
+  const y0 = Math.max(0, Math.floor(box.y0) - pad);
+  const x1 = Math.min(img.width, Math.ceil(box.x1) + pad);
+  const y1 = Math.min(img.height, Math.ceil(box.y1) + pad);
+  const w = Math.max(1, x1 - x0);
+  const h = Math.max(1, y1 - y0);
+  const scale = Math.max(2, Math.round(120 / h));
+  const png = await sharp(input)
+    .extract({ left: x0, top: y0, width: w, height: h })
+    .resize(w * scale, h * scale, { kernel: "lanczos3" })
+    .png()
+    .toBuffer();
+  return `data:image/png;base64,${png.toString("base64")}`;
 }
 
 /** 每个待 OCR 区域的结果 */
@@ -193,11 +216,18 @@ export async function recognize(
         level: "warn",
         message: `第 ${row} 行第 ${col} 个图例识别失败：${reason}`,
       });
+      let imageDataUrl: string | undefined;
+      try {
+        imageDataUrl = await cropSwatchImage(input, img, s);
+      } catch {
+        // 裁剪失败不影响主流程
+      }
       failedCells.push({
         row,
         col,
         rgb: sampleColor(img, s),
         text: reason,
+        imageDataUrl,
       });
       continue;
     }

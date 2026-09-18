@@ -16,6 +16,7 @@ interface CellDraft {
   col: number;
   rgb: { r: number; g: number; b: number };
   text: string;
+  imageDataUrl?: string;
   id: string;
   count: number | null;
 }
@@ -158,9 +159,16 @@ function onWarningClick(w: Warning) {
       </header>
       <div class="failed-list">
         <article v-for="c in drafts" :key="cellKey(c)" class="failed-cell" data-testid="failed-cell">
-          <span class="swatch large" :style="{ background: toHex(c.rgb) }" :title="toHex(c.rgb)"></span>
+          <img
+            v-if="c.imageDataUrl"
+            :src="c.imageDataUrl"
+            class="failed-crop"
+            alt="失败色块裁剪图"
+          />
+          <span v-else class="swatch large" :style="{ background: toHex(c.rgb) }" :title="toHex(c.rgb)"></span>
           <div class="failed-meta">
             <strong>第 {{ c.row }} 行 · 第 {{ c.col }} 个</strong>
+            <span>颜色 {{ toHex(c.rgb) }}</span>
             <span>{{ c.text ? `OCR：${c.text}` : "无 OCR 文本" }}</span>
           </div>
           <label class="compact-field">
@@ -367,7 +375,7 @@ function onWarningClick(w: Warning) {
 
 .failed-cell {
   display: grid;
-  grid-template-columns: 38px minmax(150px, 1fr) minmax(130px, 0.9fr) 94px auto;
+  grid-template-columns: 96px minmax(150px, 1fr) minmax(130px, 0.9fr) 94px auto;
   align-items: center;
   gap: 10px;
   padding: 10px;
@@ -390,6 +398,15 @@ function onWarningClick(w: Warning) {
   width: 38px;
   height: 38px;
   border-radius: 11px;
+}
+
+.failed-crop {
+  width: 96px;
+  height: 52px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
 }
 
 .failed-meta {
@@ -567,6 +584,12 @@ function onWarningClick(w: Warning) {
 
   .failed-cell {
     grid-template-columns: 38px minmax(0, 1fr) 90px;
+  }
+
+  .failed-crop {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 64px;
   }
 
   .failed-meta {

@@ -71,6 +71,30 @@ describe("detectSwatches (band path)", () => {
     expect(swatches.length).toBeGreaterThanOrEqual(15);
     expect(swatches.every((s) => s.y0 >= 8 && s.y1 <= h - 8)).toBe(true);
   });
+
+  it("ignores separated pattern bands above the bottom legend", async () => {
+    const w = 800;
+    const h = 500;
+    const colors = ["rgb(255,0,0)", "rgb(0,128,255)", "rgb(0,200,100)"];
+    let rects = "";
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < colors.length; col++) {
+        rects += `<rect x="${10 + col * 260}" y="${20 + row * 50}" width="240" height="36" fill="${colors[col]}"/>`;
+      }
+    }
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < colors.length; col++) {
+        rects += `<rect x="${10 + col * 260}" y="${350 + row * 50}" width="240" height="36" fill="${colors[col]}"/>`;
+      }
+    }
+    const svg = Buffer.from(
+      `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg"><rect width="${w}" height="${h}" fill="white"/>${rects}</svg>`,
+    );
+    const img = await decodeRgb(await sharp(svg).png().toBuffer());
+    const swatches = detectSwatches(img);
+    expect(swatches).toHaveLength(9);
+    expect(swatches.every((s) => s.y0 >= 350)).toBe(true);
+  });
 });
 
 describe("detectSwatches (real drawing regression)", () => {
